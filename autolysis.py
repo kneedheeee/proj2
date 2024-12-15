@@ -9,7 +9,6 @@ from scipy.stats import zscore
 import requests
 
 
-# Function to safely load datasets with encoding fallback
 def load_data_with_fallback(filepath):
     """
     Attempts to load a dataset with UTF-8 encoding, falling back to Latin-1 if UTF-8 fails.
@@ -20,14 +19,16 @@ def load_data_with_fallback(filepath):
         return pd.read_csv(filepath, encoding="latin-1")
 
 
-# Create a heatmap for data correlations
-def create_correlation_heatmap(data, save_as):
+def create_combined_visualization(data, save_as):
     """
-    Generates a heatmap visualizing the correlation between numerical features in the dataset.
-    The output is saved as a PNG file.
+    Generates a combined visualization with a correlation heatmap and KMeans clustering scatter plot.
+    The output is saved as a single PNG file.
     """
-    corr_matrix = data.select_dtypes(exclude="object").corr()  # Correlation matrix for numeric columns
-    plt.figure(figsize=(10, 8))
+    # Set up the figure
+    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Correlation heatmap
+    corr_matrix = data.select_dtypes(exclude="object").corr()
     sns.heatmap(
         corr_matrix,
         annot=True,
@@ -35,15 +36,33 @@ def create_correlation_heatmap(data, save_as):
         fmt=".2f",
         vmin=-1,
         vmax=1,
-        cbar_kws={"label": "Correlation Coefficient"}
+        cbar_kws={"label": "Correlation Coefficient"},
+        ax=axes[0]
     )
-    plt.title("Correlation Heatmap")
+    axes[0].set_title("Correlation Heatmap")
+
+    # KMeans clustering
+    numeric_data = data.select_dtypes(include=[np.number]).dropna()
+    if not numeric_data.empty:
+        kmeans_model = KMeans(n_clusters=3, random_state=42)
+        cluster_labels = kmeans_model.fit_predict(numeric_data)
+        axes[1].scatter(
+            numeric_data.iloc[:, 0],
+            numeric_data.iloc[:, 1],
+            c=cluster_labels, cmap="viridis", alpha=0.7
+        )
+        axes[1].set_title("KMeans Clustering (k=3)")
+        axes[1].set_xlabel(numeric_data.columns[0])
+        axes[1].set_ylabel(numeric_data.columns[1])
+    else:
+        axes[1].text(0.5, 0.5, "No numeric data available for clustering", horizontalalignment='center', verticalalignment='center', transform=axes[1].transAxes)
+
+    # Save the combined visualization
     plt.tight_layout()
     plt.savefig(save_as, dpi=300)
     plt.close()
 
 
-# Perform PCA for dimensionality reduction
 def apply_pca(data, components=2):
     """
     Performs PCA on numeric columns of the dataset, reducing dimensions and returning results and variance explained.
@@ -55,45 +74,6 @@ def apply_pca(data, components=2):
     return reduced_data, variance_explained
 
 
-# Cluster data using KMeans
-def perform_kmeans_clustering(data, plot_filename, clusters_count=3):
-    """
-    Performs KMeans clustering on the dataset and generates a scatter plot of clusters.
-    """
-    # Clean data for clustering
-    numeric_data = data.select_dtypes(include=[np.number]).dropna()
-
-    if numeric_data.empty:
-        print("No numeric data available for clustering.")
-        return
-
-    # Initialize and fit KMeans model
-    kmeans_model = KMeans(n_clusters=clusters_count, random_state=42)
-    cluster_labels = kmeans_model.fit_predict(numeric_data)
-
-    # Add cluster labels to the dataset
-    data["Cluster"] = cluster_labels
-
-    # Scatter plot of clusters
-    plt.figure(figsize=(8, 6))
-    plt.scatter(
-        numeric_data.iloc[:, 0],
-        numeric_data.iloc[:, 1],
-        c=cluster_labels,
-        cmap="viridis",
-        alpha=0.7
-    )
-    plt.title(f"KMeans Clustering (k={clusters_count})")
-    plt.xlabel(numeric_data.columns[0])
-    plt.ylabel(numeric_data.columns[1])
-    plt.colorbar(label="Cluster")
-    plt.tight_layout()
-    plt.savefig(plot_filename)
-    plt.close()
-    print(f"Clustering complete. Plot saved to {plot_filename}")
-
-
-# Query the AI model for insights
 def query_ai_model(prompt, token_limit=300):
     """
     Sends a prompt to the AI model and returns the response.
@@ -107,7 +87,8 @@ def query_ai_model(prompt, token_limit=300):
     request_payload = {
         "model": "gpt-4o-mini",
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": token_limit
+        "max_tokens": token_limit,
+        "detail": "low"  # Reduce cost by specifying low detail
     }
 
     try:
@@ -122,7 +103,6 @@ def query_ai_model(prompt, token_limit=300):
         return f"Error querying AI model: {str(e)}"
 
 
-# Clean data and detect outliers
 def clean_data_and_find_outliers(dataset):
     """
     Cleans data by removing rows with NaN values and detects outliers using z-scores.
@@ -134,7 +114,6 @@ def clean_data_and_find_outliers(dataset):
     return cleaned_data, outlier_mask
 
 
-# Main workflow
 def run_analysis(file_path):
     """
     The main function orchestrating data analysis and reporting.
@@ -145,18 +124,16 @@ def run_analysis(file_path):
     cleaned_data, outliers = clean_data_and_find_outliers(dataset)
     print(f"Outliers detected: {np.sum(outliers)}")
 
-    # Generate visualizations
-    create_correlation_heatmap(cleaned_data, "correlation_heatmap.png")
-
-    # PCA and clustering
+    # PCA analysis
     pca_results, variance = apply_pca(cleaned_data)
-    print(f"Explained variance: {variance}")
-    perform_kmeans_clustering(cleaned_data, "cluster_plot.png")
+
+    # Generate combined visualization
+    combined_plot_path = "analysis_visualization.png"
+    create_combined_visualization(cleaned_data, combined_plot_path)
 
     # AI insights
     ai_prompt = f"Analyze dataset columns and trends:\n{cleaned_data.dtypes}"
     ai_insights = query_ai_model(ai_prompt)
-    print("AI Insights:", ai_insights)
 
     # Generate Markdown report
     with open("README.md", "w") as f:
@@ -167,9 +144,8 @@ def run_analysis(file_path):
         f.write(f"{variance}\n")
         f.write("## Insights\n")
         f.write(ai_insights)
-        f.write("\n\n## Visualizations\n")
-        f.write("![Correlation Heatmap](correlation_heatmap.png)\n")
-        f.write("![Cluster Plot](cluster_plot.png)\n")
+        f.write("\n\n## Visualization\n")
+        f.write(f"![Combined Visualization]({combined_plot_path})\n")
 
 
 if __name__ == "__main__":
