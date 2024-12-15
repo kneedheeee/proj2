@@ -7,9 +7,10 @@
 #   "scipy",
 #   "requests<3",
 #   "tabulate",
-#   "seaborn",  
+#   "seaborn",
 # ]
 # ///
+
 import os
 import pandas as pd
 import seaborn as sns
@@ -44,37 +45,58 @@ def perform_eda(data):
     desc_stats = data.describe()
     print("Descriptive Statistics:\n", desc_stats)
 
-    corr_matrix = data.select_dtypes(include=[np.number]).corr()
-    plt.figure(figsize=(10, 8))
+    numeric_data = data.select_dtypes(include=[np.number])  # Ensure only numeric data
+    corr_matrix = numeric_data.corr()
+
+    # Create combined visualization
+    plt.figure(figsize=(16, 8))
+
+    plt.subplot(1, 2, 1)
     sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f", vmin=-1, vmax=1)
     plt.title("Correlation Heatmap")
+
+    return desc_stats, corr_matrix
+
+# Perform clustering and create visualization
+def perform_clustering_and_visualization(data, n_clusters=3):
+    """
+    Performs KMeans clustering, adds cluster labels to the dataset, and creates a PCA scatter plot with clusters.
+    """
+    numeric_data = data.select_dtypes(include=[np.number])  # Ensure only numeric data
+
+    # PCA for dimensionality reduction
+    pca = PCA(n_components=2)
+    reduced_data = pca.fit_transform(numeric_data)
+
+    # Perform clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    cluster_labels = kmeans.fit_predict(numeric_data)
+    data['Cluster'] = cluster_labels
+
+    # Combined visualization
+    plt.figure(figsize=(16, 8))
+
+    # Correlation heatmap
+    plt.subplot(1, 2, 1)
+    sns.heatmap(numeric_data.corr(), annot=True, cmap="coolwarm", fmt=".2f", vmin=-1, vmax=1)
+    plt.title("Correlation Heatmap")
+
+    # PCA scatter plot with clustering
+    plt.subplot(1, 2, 2)
+    scatter = plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=cluster_labels, cmap="viridis", alpha=0.7)
+    plt.colorbar(scatter, label="Cluster")
+    plt.title("PCA Components with Clusters")
+    plt.xlabel("Principal Component 1")
+    plt.ylabel("Principal Component 2")
+
+    plt.tight_layout()
     plt.savefig("analysis_visualization.png", dpi=300)
     plt.close()
 
-# Apply PCA
-def apply_pca(data, n_components=2):
-    """
-    Performs Principal Component Analysis (PCA) and returns the reduced data and explained variance.
-    """
-    numeric_data = data.select_dtypes(include=[np.number])
-    pca = PCA(n_components=n_components)
-    reduced_data = pca.fit_transform(numeric_data)
-    explained_variance = pca.explained_variance_ratio_
-    print(f"PCA Explained Variance: {explained_variance}")
-    return reduced_data, explained_variance
-
-# Perform clustering
-def perform_clustering(data, n_clusters=3):
-    """
-    Performs KMeans clustering and adds cluster labels to the dataset.
-    """
-    numeric_data = data.select_dtypes(include=[np.number])
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    data['Cluster'] = kmeans.fit_predict(numeric_data)
-    print(f"Cluster Centers:\n{kmeans.cluster_centers_}")
+    return pca.explained_variance_ratio_
 
 # Query AI for insights
-def query_ai(prompt, token_limit=300):
+def query_ai(prompt, token_limit=500):
     """
     Queries an AI model for insights and returns the response.
     """
@@ -102,25 +124,41 @@ def query_ai(prompt, token_limit=300):
         return f"Error querying AI model: {e}"
 
 # Generate report
-def generate_report(data, pca_variance, ai_insights):
+def generate_report(data, pca_variance, eda_insights, ai_insights):
     """
     Generates a Markdown report summarizing the analysis.
     """
+    intro_prompt = "Write a detailed introduction for a data analysis report on a dataset, including objectives and methods used."
+    intro = query_ai(intro_prompt)
+
+    eda_prompt = f"Provide an in-depth analysis of the exploratory data analysis results, including the correlation heatmap insights and descriptive statistics: {eda_insights}"
+    eda_explanation = query_ai(eda_prompt)
+
+    pca_prompt = f"Explain the following PCA explained variance ratios in depth: {pca_variance}. Include their significance in data analysis."
+    pca_explanation = query_ai(pca_prompt)
+
+    conclusion_prompt = "Write a comprehensive conclusion for a data analysis report, summarizing findings, insights, and implications for the dataset."
+    conclusion = query_ai(conclusion_prompt)
+
     with open("README.md", "w") as f:
         f.write("# Data Analysis Report\n\n")
-        f.write("## Descriptive Statistics\n")
-        f.write(data.describe().to_markdown())
-        f.write("\n\n")
+        f.write("## Introduction\n")
+        f.write(intro + "\n\n")
+
+        f.write("## Exploratory Data Analysis\n")
+        f.write(eda_explanation + "\n\n")
 
         f.write("## PCA Explained Variance\n")
-        f.write(f"{pca_variance}\n\n")
+        f.write(pca_explanation + "\n\n")
 
         f.write("## AI Insights\n")
-        f.write(ai_insights)
-        f.write("\n\n")
+        f.write(ai_insights + "\n\n")
 
         f.write("## Visualizations\n")
-        f.write("![Analysis Visualization](analysis_visualization.png)\n")
+        f.write("The visualizations include a combined correlation heatmap and PCA scatter plot with clusters, saved in `analysis_visualization.png`.\n\n")
+
+        f.write("## Conclusions\n")
+        f.write(conclusion + "\n")
 
 # Main function
 def main(filepath):
@@ -128,18 +166,19 @@ def main(filepath):
     Orchestrates the data analysis pipeline.
     """
     data = load_and_clean_data(filepath)
-    perform_eda(data)
-    reduced_data, pca_variance = apply_pca(data)
-    perform_clustering(data)
+    eda_insights, _ = perform_eda(data)
+    pca_variance = perform_clustering_and_visualization(data)
 
     prompt = f"Analyze the dataset columns and types:\n{data.dtypes}\nProvide insights on trends and anomalies."
     ai_insights = query_ai(prompt)
 
-    generate_report(data, pca_variance, ai_insights)
+    generate_report(data, pca_variance, eda_insights, ai_insights)
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <dataset_path>")
+    filepath = os.getenv("DATASET_PATH", None) if len(sys.argv) < 2 else sys.argv[1]
+
+    if not filepath:
+        print("Error: Please provide a dataset path using the environment variable DATASET_PATH or as a command-line argument.")
     else:
-        main(sys.argv[1])
+        main(filepath)
