@@ -6,12 +6,12 @@
 #   "numpy",
 #   "scipy",
 #   "requests<3",
+#   "tabulate",
 # ]
 # ///
 
 import os
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
@@ -19,89 +19,74 @@ import numpy as np
 from scipy.stats import zscore
 import requests
 
-
-def load_data_with_fallback(filepath):
-    """
-    Attempts to load a dataset with UTF-8 encoding, falling back to Latin-1 if UTF-8 fails.
-    """
+# Function to load datasets safely
+def load_data(filepath):
+    """Attempts to load a dataset with fallback encoding."""
     try:
         return pd.read_csv(filepath, encoding="utf-8")
     except UnicodeDecodeError:
         return pd.read_csv(filepath, encoding="latin-1")
 
+# Data cleaning: Handle NaNs and detect outliers
+def clean_and_analyze_data(data):
+    """Cleans the dataset and performs basic exploratory analysis."""
+    cleaned_data = data.dropna()
+    numeric_data = cleaned_data.select_dtypes(include=[np.number])
+    z_scores = np.abs(zscore(numeric_data))
+    outlier_mask = (z_scores > 3).any(axis=1)
+    cleaned_data = cleaned_data[~outlier_mask]
+    descriptive_stats = numeric_data.describe()
+    return cleaned_data, descriptive_stats, outlier_mask
 
-def create_combined_visualization(data, save_as):
-    """
-    Generates a combined visualization with a correlation heatmap and KMeans clustering scatter plot.
-    The output is saved as a single PNG file.
-    """
-    # Set up the figure
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+# Generate visualizations
+def create_visualizations(data, output_file):
+    """Creates a combined heatmap and clustering visualization."""
+    numeric_data = data.select_dtypes(include=[np.number])
+    corr_matrix = numeric_data.corr()
 
-    # Correlation heatmap
-    corr_matrix = data.select_dtypes(exclude="object").corr()
-    sns.heatmap(
-        corr_matrix,
-        annot=True,
-        cmap="coolwarm",
-        fmt=".2f",
-        vmin=-1,
-        vmax=1,
-        cbar_kws={"label": "Correlation Coefficient"},
-        ax=axes[0]
-    )
-    axes[0].set_title("Correlation Heatmap")
+    plt.figure(figsize=(16, 8))
 
-    # KMeans clustering
-    numeric_data = data.select_dtypes(include=[np.number]).dropna()
-    if not numeric_data.empty:
-        kmeans_model = KMeans(n_clusters=3, random_state=42)
-        cluster_labels = kmeans_model.fit_predict(numeric_data)
-        axes[1].scatter(
-            numeric_data.iloc[:, 0],
-            numeric_data.iloc[:, 1],
-            c=cluster_labels, cmap="viridis", alpha=0.7
-        )
-        axes[1].set_title("KMeans Clustering (k=3)")
-        axes[1].set_xlabel(numeric_data.columns[0])
-        axes[1].set_ylabel(numeric_data.columns[1])
-    else:
-        axes[1].text(0.5, 0.5, "No numeric data available for clustering", horizontalalignment='center', verticalalignment='center', transform=axes[1].transAxes)
+    # Heatmap
+    plt.subplot(1, 2, 1)
+    plt.title("Correlation Heatmap")
+    cax = plt.matshow(corr_matrix, cmap="coolwarm", fignum=0)
+    plt.colorbar(cax)
 
-    # Save the combined visualization
-    plt.tight_layout()
-    plt.savefig(save_as, dpi=300)
+    # Clustering Visualization
+    plt.subplot(1, 2, 2)
+    kmeans = KMeans(n_clusters=3, random_state=42)
+    cluster_labels = kmeans.fit_predict(numeric_data)
+    plt.scatter(numeric_data.iloc[:, 0], numeric_data.iloc[:, 1], c=cluster_labels, cmap="viridis")
+    plt.title("KMeans Clustering")
+    plt.xlabel(numeric_data.columns[0])
+    plt.ylabel(numeric_data.columns[1])
+
+    plt.savefig(output_file, dpi=300)
     plt.close()
 
-
-def apply_pca(data, components=2):
-    """
-    Performs PCA on numeric columns of the dataset, reducing dimensions and returning results and variance explained.
-    """
+# Perform PCA
+def perform_pca(data, components=2):
+    """Reduces dimensionality using PCA and returns explained variance."""
     numeric_data = data.select_dtypes(include=[np.number]).dropna()
-    pca_model = PCA(n_components=components)
-    reduced_data = pca_model.fit_transform(numeric_data)
-    variance_explained = pca_model.explained_variance_ratio_
-    return reduced_data, variance_explained
+    pca = PCA(n_components=components)
+    reduced_data = pca.fit_transform(numeric_data)
+    explained_variance = pca.explained_variance_ratio_
+    return reduced_data, explained_variance
 
-
+# Query the AI model
 def query_ai_model(prompt, token_limit=300):
-    """
-    Sends a prompt to the AI model and returns the response.
-    """
+    """Sends a concise prompt to the AI model with cost-efficient settings."""
     os.environ["AIPROXY_TOKEN"] = "your_token_here"
     headers = {
         "Authorization": f"Bearer {os.environ['AIPROXY_TOKEN']}",
         "Content-Type": "application/json"
     }
-
     request_payload = {
         "model": "gpt-4o-mini",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": token_limit,
-        "detail": "low"  # Reduce cost by specifying low detail
+        "detail": "low"  # Optimize cost
     }
-
     try:
         response = requests.post(
             "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions",
@@ -113,51 +98,38 @@ def query_ai_model(prompt, token_limit=300):
     except requests.exceptions.RequestException as e:
         return f"Error querying AI model: {str(e)}"
 
+# Generate report
+def generate_report(file_path, stats, variance, ai_insights, output_file):
+    """Creates a Markdown report summarizing the analysis."""
+    with open("README.md", "w") as f:
+        f.write(f"# Data Analysis Report\n\n")
+        f.write(f"**Dataset:** {file_path}\n\n")
+        f.write(f"## Descriptive Statistics\n\n{stats.to_markdown()}\n\n")
+        f.write(f"## PCA Explained Variance\n\n{variance}\n\n")
+        f.write(f"## AI Insights\n\n{ai_insights}\n\n")
+        f.write(f"## Visualizations\n\n![Analysis Visualization]({output_file})\n")
 
-def clean_data_and_find_outliers(dataset):
-    """
-    Cleans data by removing rows with NaN values and detects outliers using z-scores.
-    """
-    cleaned_data = dataset.dropna()
-    z_scores = np.abs(zscore(cleaned_data.select_dtypes(include=[np.number])))
-    outlier_mask = (z_scores > 3).any(axis=1)
-    cleaned_data = cleaned_data[~outlier_mask]
-    return cleaned_data, outlier_mask
-
-
+# Main function
 def run_analysis(file_path):
-    """
-    The main function orchestrating data analysis and reporting.
-    """
-    dataset = load_data_with_fallback(file_path)
+    """Orchestrates the workflow for data analysis."""
+    dataset = load_data(file_path)
+    cleaned_data, stats, outliers = clean_and_analyze_data(dataset)
 
-    # Clean and analyze data
-    cleaned_data, outliers = clean_data_and_find_outliers(dataset)
-    print(f"Outliers detected: {np.sum(outliers)}")
+    print(f"Outliers removed: {outliers.sum()}")
 
-    # PCA analysis
-    pca_results, variance = apply_pca(cleaned_data)
+    # Generate visualizations
+    visualization_file = "analysis_visualization.png"
+    create_visualizations(cleaned_data, visualization_file)
 
-    # Generate combined visualization
-    combined_plot_path = "analysis_visualization.png"
-    create_combined_visualization(cleaned_data, combined_plot_path)
+    # Perform PCA
+    _, explained_variance = perform_pca(cleaned_data)
 
-    # AI insights
-    ai_prompt = f"Analyze dataset columns and trends:\n{cleaned_data.dtypes}"
+    # Query AI model with summarized column details
+    ai_prompt = f"Dataset columns:\n{dataset.dtypes.to_string()}\nProvide insights on trends and anomalies."
     ai_insights = query_ai_model(ai_prompt)
 
-    # Generate Markdown report
-    with open("README.md", "w") as f:
-        f.write("# Data Analysis Report\n\n")
-        f.write(f"Dataset contains {len(dataset)} rows and {len(dataset.columns)} columns.\n")
-        f.write(f"Outliers detected: {np.sum(outliers)}\n")
-        f.write("## PCA Explained Variance\n")
-        f.write(f"{variance}\n")
-        f.write("## Insights\n")
-        f.write(ai_insights)
-        f.write("\n\n## Visualization\n")
-        f.write(f"![Combined Visualization]({combined_plot_path})\n")
-
+    # Generate report
+    generate_report(file_path, stats, explained_variance, ai_insights, visualization_file)
 
 if __name__ == "__main__":
     import sys
