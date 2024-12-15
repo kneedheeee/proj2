@@ -1,3 +1,14 @@
+# /// script
+# dependencies = [
+#   "pandas",
+#   "matplotlib",
+#   "scikit-learn",
+#   "numpy",
+#   "scipy",
+#   "requests<3",
+# ]
+# ///
+
 import os
 import pandas as pd
 import seaborn as sns
