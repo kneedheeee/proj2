@@ -101,7 +101,7 @@ def query_ai(prompt, token_limit=500):
     Queries an AI model for insights and returns the response.
     """
     headers = {
-        "Authorization": f"Bearer {os.getenv('AIPROXY_TOKEN', 'your_token_here')}",
+        "Authorization": f"Bearer {os.getenv('AIPROXY_TOKEN', 'eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjI0ZjEwMDAyMDJAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.Q__IjcOrbaCta7N5sgpBPoPesRZWeQizmkyi9ulcKwo')}",
         "Content-Type": "application/json"
     }
 
@@ -131,10 +131,12 @@ def generate_report(data, pca_variance, eda_insights, ai_insights):
     intro_prompt = "Write a detailed introduction for a data analysis report on a dataset, including objectives and methods used."
     intro = query_ai(intro_prompt)
 
-    eda_prompt = f"Provide an in-depth analysis of the exploratory data analysis results, including the correlation heatmap insights and descriptive statistics: {eda_insights}"
+    # Only include key statistics and insights for EDA
+    eda_prompt = f"Provide an in-depth analysis of the following descriptive statistics and correlation insights:\n{eda_insights.describe().to_string()}"
     eda_explanation = query_ai(eda_prompt)
 
-    pca_prompt = f"Explain the following PCA explained variance ratios in depth: {pca_variance}. Include their significance in data analysis."
+    # Focus on first few PCA components for explanation
+    pca_prompt = f"Explain the significance of these PCA explained variance ratios: {pca_variance[:2]}. Why are they important?"
     pca_explanation = query_ai(pca_prompt)
 
     conclusion_prompt = "Write a comprehensive conclusion for a data analysis report, summarizing findings, insights, and implications for the dataset."
