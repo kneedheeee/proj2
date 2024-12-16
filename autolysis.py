@@ -96,7 +96,7 @@ def perform_clustering_and_visualization(data, n_clusters=3):
     return pca.explained_variance_ratio_
 
 # Query AI for insights
-def query_ai(prompt, token_limit=500):
+def query_ai(prompt, token_limit=150):
     """
     Queries the AI Proxy service with the given prompt and returns the response.
     """
