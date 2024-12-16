@@ -98,10 +98,13 @@ def perform_clustering_and_visualization(data, n_clusters=3):
 # Query AI for insights
 def query_ai(prompt, token_limit=500):
     """
-    Queries an AI model for insights and returns the response.
+    Queries the AI Proxy service with the given prompt and returns the response.
     """
+    # Ensure the AIPROXY_TOKEN is set correctly
+    token = os.getenv("AIPROXY_TOKEN", "yout_token")  # Replace 'your_token_here' with your actual token
+
     headers = {
-        "Authorization": f"Bearer {os.getenv('AIPROXY_TOKEN', 'eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjI0ZjEwMDAyMDJAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.Q__IjcOrbaCta7N5sgpBPoPesRZWeQizmkyi9ulcKwo')}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
 
@@ -109,7 +112,7 @@ def query_ai(prompt, token_limit=500):
         "model": "gpt-4o-mini",
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": token_limit,
-        "detail": "low"
+        "detail":"low"
     }
 
     try:
@@ -120,6 +123,10 @@ def query_ai(prompt, token_limit=500):
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.HTTPError as e:
+        if response.status_code == 401:
+            return "Error: Unauthorized. Your token might be expired or invalid. Please log in at https://aiproxy.sanand.workers.dev/ to get a new token."
+        return f"HTTP error occurred: {e}"
     except requests.exceptions.RequestException as e:
         return f"Error querying AI model: {e}"
 
